@@ -1,0 +1,253 @@
+package scenes
+
+import (
+	"Comelon/Models"
+	"math"
+	"math/rand"
+	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+)
+
+const (
+    gameWidth  = 800
+    gameHeight = 600    
+)
+
+type Bot struct {
+    X, Y, Size int
+    Circle     *canvas.Circle
+}
+
+
+type GameScene struct {
+    window fyne.Window
+    bots   []*Models.Bot // Lista de bots
+    cells  []*Models.Cell
+    c      *Models.Player
+}
+
+func NewGameScene(window fyne.Window) *GameScene {
+    scene := &GameScene{
+        window: window,
+        bots:   make([]*Models.Bot, 3),   // Inicia la lista de bots con espacio para 3 bots
+        cells:  make([]*Models.Cell, 10), // Inicia la lista de celulas con espacio para 10 células
+        c:      Models.NewPlayer(),       // Inicializa el jugador
+    }
+
+    // Crea 3 bots y los añade a la lista de bots
+    for i := range scene.bots {
+        scene.bots[i] = Models.NewBot()
+    }
+
+    // Crea 10 células y las añade a la lista de células
+    for i := range scene.cells {
+        scene.cells[i] = Models.NewCell(int(scene.window.Canvas().Size().Width), int(scene.window.Canvas().Size().Height))
+    }
+
+    go func() {
+        for {
+            time.Sleep(time.Second * 10) 
+            scene.cells = append(scene.cells, Models.NewCell(int(scene.window.Canvas().Size().Width), int(scene.window.Canvas().Size().Height))) // Añade una nueva célula a la lista de células
+            scene.Render()
+        }
+    }()
+
+    scene.Render()
+
+    go scene.StartGame()
+
+    window.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) { // Añade un manejador de eventos
+        const stepSize = 5
+        newX, newY := scene.c.X, scene.c.Y // Nueva posicion provisional
+
+        switch e.Name {
+        case fyne.KeyUp:
+            newY -= stepSize
+        case fyne.KeyDown:
+            newY += stepSize
+        case fyne.KeyLeft:
+            newX -= stepSize
+        case fyne.KeyRight:
+            newX += stepSize
+        default:
+            return
+        }
+
+        // Verifica si está dentro del mapa
+        if newX >= 0 && newX <= gameWidth && newY >= 0 && newY <= gameHeight {
+            scene.c.X = newX
+            scene.c.Y = newY
+
+            scene.c.Circle.Move(fyne.NewPos(float32(scene.c.X), float32(scene.c.Y))) // Mueve el círculo a la nueva posición del jugador
+
+            // Verifica si el jugador ha comido alguna célula
+            for i, cell := range scene.cells {
+                if scene.c.Eat(cell) {
+                    scene.cells[i] = Models.NewCell(int(scene.window.Canvas().Size().Width), int(scene.window.Canvas().Size().Height)) // Si el jugador come una célula, crea una nueva célula
+                    scene.Render() // Renderiza la escena para mostrar la célula
+                }
+            }
+
+            scene.c.Circle.Refresh() // Actualiza el círculo después de moverlo
+        }
+    })
+
+    return scene
+}
+
+func (s *GameScene) StartGame() {
+    go s.RunPlayer()
+    go s.RunBots()
+    go s.RunCells()
+    go s.CheckGameOver()
+}
+
+func (s *GameScene) Render() {
+    botWidgets := make([]fyne.CanvasObject, len(s.bots))
+    cellWidgets := make([]fyne.CanvasObject, len(s.cells))
+
+    // Obtiene el widget de cada bot y lo añade a la lista de widgets de los bots
+    for i, bot := range s.bots {
+        botWidgets[i] = bot.GetWidget()
+    }
+
+    // Obtiene el widget de cada célula y lo añade a la lista de widgets de las células
+    for i, cell := range s.cells {
+        cellWidgets[i] = cell.GetWidget()
+    }
+
+    playerWidget := s.c.GetWidget() // Obtiene el widget del jugador
+
+    s.window.SetContent(container.NewWithoutLayout(append(append(botWidgets, cellWidgets...), playerWidget)...))
+}
+
+func (s *GameScene) RunPlayer() {
+    for {
+    
+        
+        time.Sleep(time.Millisecond * 10)
+    }
+}
+func (s *GameScene) RunBots() {
+    for {
+        for _, bot := range s.bots {
+        
+
+            // Encuentra la celula mas cercana al bot
+            var closestCell *Models.Cell
+            closestDistance := 100 * float64(s.window.Canvas().Size().Width) * float64(s.window.Canvas().Size().Height) // Inicializa con una distancia máxima
+
+            for _, cell := range s.cells {
+                dx := bot.X - cell.X
+                dy := bot.Y - cell.Y
+                distance := math.Sqrt(float64(dx*dx + dy*dy))
+
+                if distance < closestDistance {
+                    closestDistance = distance
+                    closestCell = cell
+                }
+            }
+
+            // Si hay una celula cerca, mueve el bot hacia esa celula
+            if closestCell != nil {
+                dx := closestCell.X - bot.X
+                dy := closestCell.Y - bot.Y
+                distance := math.Sqrt(float64(dx*dx + dy*dy))
+
+                if distance > 0 {
+                    // Calcula la dirección hacia la célula
+                    dirX := float32(float64(dx) / distance)
+                    dirY := float32(float64(dy) / distance)
+                    // Mueve el bot en la dirección
+                    bot.X += int(dirX)
+                    bot.Y += int(dirY)
+
+                    // Los bots tienen limites del mapa
+                    bot.X = clamp(bot.X, 0, gameWidth)
+                    bot.Y = clamp(bot.Y, 0, gameHeight)
+
+                    // Actualiza la posición del circulo del bot
+                    bot.Circle.Move(fyne.NewPos(float32(bot.X), float32(bot.Y)))
+
+                    // Verifica si el bot ha comido la celula más cercana
+                    if bot.Eat(closestCell) {
+                        // Cuando el bot come la celula, aumenta su tamaño
+                        for i, cell := range s.cells {
+                            if cell == closestCell {
+                                s.cells[i] = Models.NewCell(int(s.window.Canvas().Size().Width), int(s.window.Canvas().Size().Height))
+                            }
+                        }
+
+                        bot.Circle.Refresh() // Refresca el círculo después de comer
+                    } else {
+                        bot.Circle.Refresh() // Refresca el círculo si no come
+                    }
+                }
+            }
+
+            // Checa si el jugador puede comer al bot
+            if s.c.Size > bot.Size {
+                // Calcula la distancia entre el jugador y el bot
+                dx := s.c.X - bot.X
+                dy := s.c.Y - bot.Y
+                distance := math.Sqrt(float64(dx*dx + dy*dy))
+
+                // Si el jugador esta cerca del bot, este puede ser comido por el jugador
+                if distance < float64(s.c.Size)+float64(bot.Size) {
+                    // Elimina el bot de la lista
+                    for i, b := range s.bots {
+                        if b == bot {
+                            s.bots = append(s.bots[:i], s.bots[i+1:]...)
+                            bot.Circle.Hide() // Oculta el círculo del bot
+                            break
+                        }
+                    }
+                }
+            }
+
+            // Si no hay celula cercana o después de comer, mueve el bot en una dirección aleatoria
+            randomDirX := rand.Intn(3) - 1 
+            randomDirY := rand.Intn(3) - 1
+            bot.X += randomDirX
+            bot.Y += randomDirY
+
+            // Asegura que el bot no salga de los limites del area de juego
+            bot.X = clamp(bot.X, 0, gameWidth)
+            bot.Y = clamp(bot.Y, 0, gameHeight)
+
+            // Actualiza la posición del círculo del bot 
+            bot.Circle.Move(fyne.NewPos(float32(bot.X), float32(bot.Y)))
+
+            bot.Circle.Refresh() // Refresca el círculo después de moverlo aleatoriamente
+        }
+        time.Sleep(time.Millisecond * 10) 
+    }
+}
+
+func (s *GameScene) RunCells() {
+    for {
+     
+        time.Sleep(time.Millisecond * 100) 
+    }
+}
+
+func (s *GameScene) CheckGameOver() {
+    for {
+        
+        
+        time.Sleep(time.Second * 1) 
+    }
+}
+
+// Función de ayuda para asegurarse de que un valor esté dentro de un rango
+func clamp(value, min, max int) int {
+    if value < min {
+        return min
+    } else if value > max {
+        return max
+    }
+    return value
+}
